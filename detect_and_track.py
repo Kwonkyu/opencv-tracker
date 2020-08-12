@@ -11,7 +11,7 @@ import datetime
 import json
 
 import utils
-import TrackerStatus
+from TrackerStatus import TrackerStatus
 
 
 # Arguments to specify options.
@@ -22,9 +22,9 @@ ap.add_argument("-t", "--tracker", required=True, help="tracker to track detecte
 ap.add_argument("-o", "--output", action='store_true', help="option to write output to video file.")
 args = vars(ap.parse_args())
 
-# trackers = []
-trackers = dict()
+# Tracker related variable.
 tracker_class = str(args['tracker']).upper()
+trackers = []
 
 # Video input, output variables.
 video_input = cv2.VideoCapture(0) if args['video'] is None else cv2.VideoCapture(args['video'])
@@ -36,8 +36,8 @@ video_writer = cv2.VideoWriter(video_name, cv2.CAP_FFMPEG, cv2.VideoWriter_fourc
                                25, (video_width, video_height)) if is_video_write else None
 
 # import YOLO settings from json.
-with open(args['yolo_json']) as yolojson:
-    yolo_env = json.load(yolojson)
+with open(args['yolo_json']) as json_file:
+    yolo_env = json.load(json_file)
 
 # YOLO variables.
 coco_label_path = os.path.sep.join([yolo_env["yolo-directory"], yolo_env["coco-names"]])
@@ -60,7 +60,12 @@ layer_name = net.getLayerNames()
 layer_name = [layer_name[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
 
-def yolo(image, dnn_net, layer_names, bboxes_container, confidences_container, classIDs_container):
+def yolo(image, dnn_net, layer_names, confidence_limit, threshold_limit):
+    # Generate containers used in YOLO processing.
+    bboxes_container = []
+    confidences_container = []
+    class_ids_container = []
+
     # Convert image to input blob for the neural network.
     blob = cv2.dnn.blobFromImage(image, 1 / 255.0, (320, 320), swapRB=True, crop=False)  # 320, 416, 608?
     dnn_net.setInput(blob)
@@ -71,41 +76,39 @@ def yolo(image, dnn_net, layer_names, bboxes_container, confidences_container, c
         for detection in output:
             # Get index(argmax) of highest probability class on detected object.
             scores = detection[5:]
-            classID = np.argmax(scores)
-            confidence = scores[classID]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
 
             # If the probability of class is higher than minimal confidence, add bounding box.
-            if confidence > yolo_confidence:
+            if confidence > confidence_limit:
                 # YOLO returns the center x, y coordinates of bounding box.
                 box = detection[0:4] * np.array([video_width, video_height, video_width, video_height])
-                (cx, cy, w, h) = box.astype("int")
+                (cx, cy, _w, _h) = box.astype("int")
                 # So we need to calculate the upper left x, y coordinate of bounding box.
-                bboxes_container.append([int(cx - (w / 2)), int(cy - (h / 2)), int(w), int(h)])
+                bboxes_container.append([int(cx - (_w / 2)), int(cy - (_h / 2)), int(_w), int(_h)])
                 confidences_container.append(float(confidence))
-                classIDs_container.append(classID)
+                class_ids_container.append(class_id)
 
     # YOLO doesn't do NMS on detections.
-    indexes_container = cv2.dnn.NMSBoxes(bboxes, confidences, yolo_confidence, yolo_nms_threshold)
-    return indexes_container
+    indexes_container = cv2.dnn.NMSBoxes(bboxes_container, confidences_container, confidence_limit, threshold_limit)
+    return bboxes_container, confidences_container, class_ids_container, indexes_container
 
 
 while True:
     # Read each frame of video to detect objects.
     is_video_okay, video_frame = video_input.read()
 
-    bboxes = []
-    confidences = []
-    classIDs = []
-    indexes = yolo(video_frame, net, layer_name, bboxes, confidences, classIDs)
+    # Execute YOLO to detect objects.
+    bounding_boxes, confidences, class_ids, indexes = yolo(video_frame, net, layer_name, yolo_confidence, yolo_nms_threshold)
 
-    # If there're detected objects, add to tracker.
+    # If there're detected objects, draw bounding box of it to let user know where it is.
     detected_objects_window = video_frame.copy()
     if len(indexes) > 0:
         for i in indexes.flatten():
             # A pandas.Index.flatten() function returns a copy of the array into one dimension.
-            (x, y, w, h) = bboxes[i]
+            (x, y, w, h) = bounding_boxes[i]
             cv2.rectangle(detected_objects_window, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            text = "{}: {:.4f}".format(coco_labels[int(classIDs[i])], confidences[i])
+            text = "{}: {:.4f}".format(coco_labels[int(class_ids[i])], confidences[i])
             cv2.putText(detected_objects_window, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
     cv2.imshow("detected objects by YOLO", detected_objects_window)
@@ -116,12 +119,13 @@ while True:
         print("Detection result refused.")
         continue
 
+# If detection result is selected, store them in TrackerStatus object each.
 for i in indexes.flatten():
-    # Add trackers for the number of detected objects and init each tracker with each object.
     tracker = utils.get_tracker(tracker_class)
-    tracker.init(video_frame, tuple(bboxes[i]))
-    # trackers.append(tracker)
-    trackers.update({tracker: coco_labels[int(classIDs[i])]})
+    tracker_status = TrackerStatus(tracker)
+    tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
+    tracker_status.set_target_category(coco_labels[int(class_ids[i])])
+    trackers.append(tracker_status)
 
 current_frame = 0
 while video_input.isOpened():
@@ -136,28 +140,28 @@ while video_input.isOpened():
     # detect object by YOLO every nth frame.
     if current_frame % 15 == 0:
         current_frame = 0
-        bboxes = []
-        confidences = []
-        classIDs = []
-        indexes = yolo(video_frame, net, layer_name, bboxes, confidences, classIDs)
+        bounding_boxes, confidences, class_ids, indexes = yolo(video_frame, net, layer_name, yolo_confidence, yolo_nms_threshold)
 
-        # If there're detected objects, add to tracker.
-        trackers = dict()
+        # Remove previous trackers and set new one.
+        # TODO: THIS SHOULD BE FIXED LATER!! Use centroid to link previous and new trackers.
+        trackers.clear()
         if len(indexes) > 0:
             for i in indexes.flatten():
+                (x, y, w, h) = bounding_boxes[i]
                 tracker = utils.get_tracker(tracker_class)
-                tracker.init(video_frame, tuple(bboxes[i]))
-                trackers.update({tracker: coco_labels[int(classIDs[i])]})
+                tracker_status = TrackerStatus(tracker)
+                tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
+                tracker_status.set_target_category(coco_labels[int(class_ids[i])])
+                trackers.append(tracker_status)
 
-    # for tracker in trackers:
-    for tracker, object_type in trackers.items():
-        is_tracker_tracking, (x, y, w, h) = tracker.update(video_frame)
-        if is_tracker_tracking:
+    for tracker_status in trackers:
+        tracker_status.update_tracker(video_frame)
+        if tracker_status.is_tracker_tracking():
             current_tracking_object_size = current_tracking_object_size + 1
             # trackers.remove(tracker) << need to recover, not delete!
-            x1, y1, x2, y2 = int(x), int(y), int(x) + int(w), int(y) + int(h)
-            cv2.rectangle(video_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(video_frame, object_type, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            (x, y, w, h) = tracker_status.get_bounding_box()
+            cv2.rectangle(video_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.putText(video_frame, tracker_status.get_target_category(), (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
     current_fps_string = "Current fps: {}".format(int(fps))
