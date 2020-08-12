@@ -127,3 +127,17 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# PyCharm
+.idea/
+
+# Project Output
+benchmark/
+model/
+video/
+*.avi
+*.mp4
+
+# Project Models
+goturn.caffemodel
+goturn.prototxt

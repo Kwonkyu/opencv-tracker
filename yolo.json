@@ -1,0 +1,8 @@
+{
+  "yolo-directory": ".\\model\\yolov3\\",
+  "yolo-weights": "yolov3.weights",
+  "yolo-cfg": "yolov3.cfg",
+  "coco-names": "coco.names",
+  "yolo-confidence": 0.8,
+  "yolo-nms-threshold": 0.3
+}
