@@ -141,3 +141,4 @@ video/
 # Project Models
 goturn.caffemodel
 goturn.prototxt
+sort-module/
