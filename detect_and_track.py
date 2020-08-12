@@ -1,6 +1,7 @@
 # confidence: 0.8 is recommended.
 # recommended tracker: KCF.
 # 0.1v: detect object at first frame and set tracker on it.
+# 0.2v: use centroid to tell detected object is already tracked or not.
 
 import numpy as np
 import argparse
@@ -8,29 +9,9 @@ import cv2
 import os
 import datetime
 import json
-import time
 
-
-def wait_key(expected_key: str = "q"):
-    while True:
-        keystroke = cv2.waitKey(30)
-        if keystroke & 0xFF == ord(expected_key):
-            return True
-        elif keystroke & 0xFF != 255:
-            return False
-
-
-# Tracker generator.
-def get_tracker(name):
-    trackers_list: dict = {"BOOSTING": cv2.TrackerBoosting_create(),
-                           "CSRT": cv2.TrackerCSRT_create(),
-                           "GOTURN": cv2.TrackerGOTURN_create(),
-                           "KCF": cv2.TrackerKCF_create(),
-                           "MEDIANFLOW": cv2.TrackerMedianFlow_create(),
-                           "MOSSE": cv2.TrackerMOSSE_create(),
-                           "TLD": cv2.TrackerTLD_create(),
-                           "MIL": cv2.TrackerMIL_create()}
-    return trackers_list[name]
+import utils
+import TrackerStatus
 
 
 # Arguments to specify options.
@@ -78,19 +59,13 @@ layer_name = net.getLayerNames()
 # which are essentially the last layers of the network.
 layer_name = [layer_name[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
-while True:
-    # Read each frame of video to detect objects.
-    is_video_okay, video_frame = video_input.read()
 
+def yolo(image, dnn_net, layer_names, bboxes_container, confidences_container, classIDs_container):
     # Convert image to input blob for the neural network.
-    blob = cv2.dnn.blobFromImage(video_frame, 1 / 255.0, (320, 320), swapRB=True, crop=False)  # 320, 416, 608?
-    net.setInput(blob)
+    blob = cv2.dnn.blobFromImage(image, 1 / 255.0, (320, 320), swapRB=True, crop=False)  # 320, 416, 608?
+    dnn_net.setInput(blob)
     # Get a list of predicted bounding boxes as the network's output layers.
-    layer_output = net.forward(layer_name)
-
-    bboxes = []
-    confidences = []
-    classIDs = []
+    layer_output = dnn_net.forward(layer_names)
 
     for output in layer_output:
         for detection in output:
@@ -105,12 +80,23 @@ while True:
                 box = detection[0:4] * np.array([video_width, video_height, video_width, video_height])
                 (cx, cy, w, h) = box.astype("int")
                 # So we need to calculate the upper left x, y coordinate of bounding box.
-                bboxes.append([int(cx - (w / 2)), int(cy - (h / 2)), int(w), int(h)])
-                confidences.append(float(confidence))
-                classIDs.append(classID)
+                bboxes_container.append([int(cx - (w / 2)), int(cy - (h / 2)), int(w), int(h)])
+                confidences_container.append(float(confidence))
+                classIDs_container.append(classID)
 
     # YOLO doesn't do NMS on detections.
-    indexes = cv2.dnn.NMSBoxes(bboxes, confidences, yolo_confidence, yolo_nms_threshold)
+    indexes_container = cv2.dnn.NMSBoxes(bboxes, confidences, yolo_confidence, yolo_nms_threshold)
+    return indexes_container
+
+
+while True:
+    # Read each frame of video to detect objects.
+    is_video_okay, video_frame = video_input.read()
+
+    bboxes = []
+    confidences = []
+    classIDs = []
+    indexes = yolo(video_frame, net, layer_name, bboxes, confidences, classIDs)
 
     # If there're detected objects, add to tracker.
     detected_objects_window = video_frame.copy()
@@ -123,7 +109,7 @@ while True:
             cv2.putText(detected_objects_window, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
     cv2.imshow("detected objects by YOLO", detected_objects_window)
-    if wait_key("q"):
+    if utils.wait_key("q"):
         print("Detection result accepted.")
         break
     else:
@@ -132,17 +118,36 @@ while True:
 
 for i in indexes.flatten():
     # Add trackers for the number of detected objects and init each tracker with each object.
-    tracker = get_tracker(tracker_class)
+    tracker = utils.get_tracker(tracker_class)
     tracker.init(video_frame, tuple(bboxes[i]))
-    #trackers.append(tracker)
+    # trackers.append(tracker)
     trackers.update({tracker: coco_labels[int(classIDs[i])]})
 
+current_frame = 0
 while video_input.isOpened():
-    timer = cv2.getTickCount()
+    current_frame = current_frame + 1
     current_tracking_object_size = 0
+    timer = cv2.getTickCount()
     is_video_playing, video_frame = video_input.read()
     if is_video_playing is False:
+        print("END OF VIDEO STREAM.")
         break
+
+    # detect object by YOLO every nth frame.
+    if current_frame % 15 == 0:
+        current_frame = 0
+        bboxes = []
+        confidences = []
+        classIDs = []
+        indexes = yolo(video_frame, net, layer_name, bboxes, confidences, classIDs)
+
+        # If there're detected objects, add to tracker.
+        trackers = dict()
+        if len(indexes) > 0:
+            for i in indexes.flatten():
+                tracker = utils.get_tracker(tracker_class)
+                tracker.init(video_frame, tuple(bboxes[i]))
+                trackers.update({tracker: coco_labels[int(classIDs[i])]})
 
     # for tracker in trackers:
     for tracker, object_type in trackers.items():
@@ -155,12 +160,12 @@ while video_input.isOpened():
             cv2.putText(video_frame, object_type, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
-    current_frame_string = "Current fps: {}".format(int(fps))
+    current_fps_string = "Current fps: {}".format(int(fps))
     tracking_status_string = "Tracking: {} objects".format(current_tracking_object_size)
     tracker_status_string = "Tracker: {}".format(tracker_class)
 
     cv2.rectangle(video_frame, (5, 25), (220, 100), (0, 0, 0), -1)
-    cv2.putText(video_frame, current_frame_string, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
+    cv2.putText(video_frame, current_fps_string, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
     cv2.putText(video_frame, tracking_status_string, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
     cv2.putText(video_frame, tracker_status_string, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
 
@@ -172,7 +177,7 @@ while video_input.isOpened():
     if key == ord("q"):
         break
     elif key == ord("s"):
-        wait_key("s")
+        utils.wait_key("s")
 
 video_input.release()
 cv2.destroyAllWindows()

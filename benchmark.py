@@ -1,5 +1,4 @@
 import cv2
-from numpy import ndarray
 import argparse
 import datetime
 import os.path
@@ -18,7 +17,7 @@ trackers_list: dict = {"BOOSTING": cv2.TrackerBoosting_create(),
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-v", "--video", type=str, required=True, help="benchmark video file input")
 argparser.add_argument("-g", "--ground-truth", type=str, required=True, help="ground truth file")
-argparser.add_argument("-t", "--tracker", type=str, required=True, #nargs='*',
+argparser.add_argument("-t", "--tracker", type=str, required=True,  # nargs='*',
                        help="benchmark tracker type input(BOOSTING CSRT GOTURN KCF MEDIANFLOW MOSSE TLD).")
 argparser.add_argument("-n", "--no-status", action='store_true', help="option to hide tracking status.")
 argparser.add_argument("-s", "--split", action='store_true', help="option to split ground truth and tracking output.")
