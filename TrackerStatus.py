@@ -23,9 +23,13 @@ class TrackerStatus:
 
     def update_tracker(self, image):
         self.is_tracking, self.bounding_box = self.tracker.update(image)
-        self.centroid = get_centroid(self.bounding_box)
-        self.centroid = [i for i in map(lambda x: int(x), self.centroid)]
-        self.bounding_box = [i for i in map(lambda x: int(x), self.bounding_box)]
+        if self.is_tracking is False:
+            self.centroid = (-1, -1)
+            self.bounding_box = (-1, -1, -1, -1)
+        else:
+            self.centroid = get_centroid(self.bounding_box)
+            self.centroid = [i for i in map(lambda x: int(x), self.centroid)]
+            self.bounding_box = [i for i in map(lambda x: int(x), self.bounding_box)]
         # When tracker updates, it returns float coordinates of bounding box.
 
     def get_bounding_box(self):
@@ -58,6 +62,7 @@ class TrackerStatus:
         output.update({"tracker":self.tracker})
         output.update({"bounding_box":self.bounding_box})
         output.update({"category":self.target_category})
+        output.update({"index": self.index})
         output.update({"centroid":self.centroid})
         output.update({"status":self.is_tracking})
         return output

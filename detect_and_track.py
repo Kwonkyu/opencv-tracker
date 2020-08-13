@@ -138,10 +138,20 @@ while video_input.isOpened():
         print("END OF VIDEO STREAM.")
         break
 
-    # detect object by YOLO every nth frame.
     if current_frame % 15 == 0:
         current_frame = 0
+        # detect object by YOLO every nth frame.
         bounding_boxes, confidences, class_ids, indexes = yolo(video_frame, net, layer_name, yolo_confidence, yolo_nms_threshold)
+
+        # delete failed(or regarded as failed) trackers
+        for tracker_status in trackers:
+            if tracker_status.is_tracker_tracking() is False:
+                trackers.remove(tracker_status)
+                continue
+
+            (cx, cy) = tracker_status.get_centroid()
+            if not 0 < cx < video_width or not 0 < cy < video_height:
+                trackers.remove(tracker_status)
 
         # try to find out this detected object is already tracked or not by comparing centroids.
         # TODO: find appropriate threshold for distance between centroids. or another algorithm.
@@ -170,11 +180,6 @@ while video_input.isOpened():
                     tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
                     tracker_status.set_target_category(coco_labels[int(class_ids[i])])
                     trackers.append(tracker_status)
-
-        # delete failed trackers
-        for tracker_status in trackers:
-            if tracker_status.is_tracker_tracking() is False:
-                trackers.remove(tracker_status)
 
     # update tracker's tracking result
     for tracker_status in trackers:
