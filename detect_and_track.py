@@ -9,6 +9,7 @@ import cv2
 import os
 import datetime
 import json
+import math
 
 import utils
 from TrackerStatus import TrackerStatus
@@ -83,9 +84,9 @@ def yolo(image, dnn_net, layer_names, confidence_limit, threshold_limit):
             if confidence > confidence_limit:
                 # YOLO returns the center x, y coordinates of bounding box.
                 box = detection[0:4] * np.array([video_width, video_height, video_width, video_height])
-                (cx, cy, _w, _h) = box.astype("int")
+                (_cx, _cy, _w, _h) = box.astype("int")
                 # So we need to calculate the upper left x, y coordinate of bounding box.
-                bboxes_container.append([int(cx - (_w / 2)), int(cy - (_h / 2)), int(_w), int(_h)])
+                bboxes_container.append([int(_cx - (_w / 2)), int(_cy - (_h / 2)), int(_w), int(_h)])
                 confidences_container.append(float(confidence))
                 class_ids_container.append(class_id)
 
@@ -142,27 +143,58 @@ while video_input.isOpened():
         current_frame = 0
         bounding_boxes, confidences, class_ids, indexes = yolo(video_frame, net, layer_name, yolo_confidence, yolo_nms_threshold)
 
-        # Remove previous trackers and set new one.
-        # TODO: THIS SHOULD BE FIXED LATER!! Use centroid to link previous and new trackers.
-        trackers.clear()
+        # try to find out this detected object is already tracked or not by comparing centroids.
+        # TODO: find appropriate threshold for distance between centroids. or another algorithm.
         if len(indexes) > 0:
             for i in indexes.flatten():
-                (x, y, w, h) = bounding_boxes[i]
-                tracker = utils.get_tracker(tracker_class)
-                tracker_status = TrackerStatus(tracker)
-                tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
-                tracker_status.set_target_category(coco_labels[int(class_ids[i])])
-                trackers.append(tracker_status)
+                is_this_object_new = True
+                # Get tracking object's centroid to compare with existing ones.
+                compared_centroid = utils.get_centroid(bounding_boxes[i])
+                for tracker_status in trackers:
+                    existing_centroid = tracker_status.get_centroid()
+                    distance_between_centroids = math.dist(compared_centroid, existing_centroid)
+                    if distance_between_centroids > 30:
+                        # Then this object has never been tracked by current tracker.
+                        pass
+                    else:
+                        # Then this object is already tracked by current tracker.
+                        # TODO: this cause bug when yolo detects some static object and occlusion occurs.
+                        # tracker should be disappeared for failure of detecting target but keep alives
+                        # because its centroid distance between yolo is lower than 30.
+                        is_this_object_new = False
+                        break
 
+                if is_this_object_new:
+                    tracker = utils.get_tracker(tracker_class)
+                    tracker_status = TrackerStatus(tracker)
+                    tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
+                    tracker_status.set_target_category(coco_labels[int(class_ids[i])])
+                    trackers.append(tracker_status)
+
+        # delete failed trackers
+        for tracker_status in trackers:
+            if tracker_status.is_tracker_tracking() is False:
+                trackers.remove(tracker_status)
+
+    # update tracker's tracking result
     for tracker_status in trackers:
         tracker_status.update_tracker(video_frame)
+
+    # draw at once so tracker's bounding boxes won't interfere with other tracker's tracking.
+    for tracker_status in trackers:
         if tracker_status.is_tracker_tracking():
             current_tracking_object_size = current_tracking_object_size + 1
-            # trackers.remove(tracker) << need to recover, not delete!
+            # draw bounding box.
             (x, y, w, h) = tracker_status.get_bounding_box()
             cv2.rectangle(video_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.putText(video_frame, tracker_status.get_target_category(), (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            # draw centroid point.
+            (cx, cy) = tracker_status.get_centroid()
+            cv2.circle(video_frame, (cx, cy), 2, (0, 255, 0), 2)
+            # draw object category, index number text.
+            detection_status_string = "{} #{}".format(tracker_status.get_target_category(), tracker_status.get_index())
+            cv2.putText(video_frame, detection_status_string, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
+    # draw tracking status string.
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
     current_fps_string = "Current fps: {}".format(int(fps))
     tracking_status_string = "Tracking: {} objects".format(current_tracking_object_size)

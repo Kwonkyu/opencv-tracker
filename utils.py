@@ -27,3 +27,4 @@ def get_centroid(bounding_box) -> tuple:
     (_x, _y, _w, _h) = bounding_box
     centroid = (_x + _w / 2, _y + _h / 2)
     return centroid
+
