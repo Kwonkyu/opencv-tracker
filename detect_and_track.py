@@ -138,20 +138,38 @@ while video_input.isOpened():
         print("END OF VIDEO STREAM.")
         break
 
+    # update tracker's tracking result
+    for tracker_status in trackers:
+        tracker_status.update_tracker(video_frame)
+
     if current_frame % 15 == 0:
         current_frame = 0
         # detect object by YOLO every nth frame.
         bounding_boxes, confidences, class_ids, indexes = yolo(video_frame, net, layer_name, yolo_confidence, yolo_nms_threshold)
 
-        # delete failed(or regarded as failed) trackers
+        # delete failed trackers
         for tracker_status in trackers:
+            # if tracking result is false
             if tracker_status.is_tracker_tracking() is False:
                 trackers.remove(tracker_status)
                 continue
 
+            # if centroid is out of view
             (cx, cy) = tracker_status.get_centroid()
             if not 0 < cx < video_width or not 0 < cy < video_height:
                 trackers.remove(tracker_status)
+                continue
+
+            # if tracking result jumps too much distance
+            if tracker_status.is_tracker_jumping():
+                trackers.remove(tracker_status)
+                continue
+
+            # if tracking result is too small
+            (x, y, w, h) = tracker_status.get_bounding_box()
+            if w < 50 or h < 50:
+                trackers.remove(tracker_status)
+                continue
 
         # try to find out this detected object is already tracked or not by comparing centroids.
         # TODO: find appropriate threshold for distance between centroids. or another algorithm.
@@ -180,10 +198,6 @@ while video_input.isOpened():
                     tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
                     tracker_status.set_target_category(coco_labels[int(class_ids[i])])
                     trackers.append(tracker_status)
-
-    # update tracker's tracking result
-    for tracker_status in trackers:
-        tracker_status.update_tracker(video_frame)
 
     # draw at once so tracker's bounding boxes won't interfere with other tracker's tracking.
     for tracker_status in trackers:

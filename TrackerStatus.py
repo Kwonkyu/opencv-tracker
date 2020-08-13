@@ -1,4 +1,5 @@
 from utils import get_centroid
+import math
 
 
 class TrackerStatus:
@@ -10,36 +11,35 @@ class TrackerStatus:
         self.target_category = None
         self.centroid = (-1, -1)
         self.index = -1
-        self.is_tracking = False
-        # self.failure_threshold = 30  # wait tracker to recover from failure at 30 frames.
+        self.tracking = False
+        self.jumping = False
 
     def init_tracker(self, image, bbox):
         self.bounding_box = bbox
         self.tracker.init(image, bbox)
         self.centroid = get_centroid(bbox)
 
+    def is_tracker_jumping(self):
+        return self.jumping
+
     def is_tracker_tracking(self):
-        return self.is_tracking
+        return self.tracking
 
     def update_tracker(self, image):
-        self.is_tracking, self.bounding_box = self.tracker.update(image)
-        if self.is_tracking is False:
+        self.tracking, self.bounding_box = self.tracker.update(image)
+        old_centroid = self.centroid
+        if self.tracking is False:
             self.centroid = (-1, -1)
             self.bounding_box = (-1, -1, -1, -1)
         else:
             self.centroid = get_centroid(self.bounding_box)
             self.centroid = [i for i in map(lambda x: int(x), self.centroid)]
             self.bounding_box = [i for i in map(lambda x: int(x), self.bounding_box)]
-        # When tracker updates, it returns float coordinates of bounding box.
+            # When tracker updates, it returns float coordinates of bounding box.
 
-    def get_bounding_box(self):
-        return self.bounding_box
-
-    def get_target_category(self):
-        return self.target_category
-
-    def get_centroid(self):
-        return self.centroid
+        x, y, w, h = self.bounding_box
+        if math.dist(old_centroid, self.centroid) > math.dist((x, y), (x+w, y+h)) * 2:
+            self.jumping = True
 
     def set_target_category(self, value):
         self.target_category = value
@@ -54,6 +54,15 @@ class TrackerStatus:
             self.index = tracker_index
             TrackerStatus.category_index.update({value: tracker_index})
 
+    def get_bounding_box(self):
+        return self.bounding_box
+
+    def get_target_category(self):
+        return self.target_category
+
+    def get_centroid(self):
+        return self.centroid
+
     def get_index(self):
         return self.index
 
@@ -64,5 +73,6 @@ class TrackerStatus:
         output.update({"category":self.target_category})
         output.update({"index": self.index})
         output.update({"centroid":self.centroid})
-        output.update({"status":self.is_tracking})
+        output.update({"tracking":self.tracking})
+        output.update({"jumping":self.jumping})
         return output
