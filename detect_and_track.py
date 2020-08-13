@@ -21,11 +21,19 @@ ap.add_argument("-v", "--video", help="path to input image")
 ap.add_argument("-y", "--yolo-json", required=True, help="json file about YOLO setting")
 ap.add_argument("-t", "--tracker", required=True, help="tracker to track detected objects.")
 ap.add_argument("-o", "--output", action='store_true', help="option to write output to video file.")
+ap.add_argument("--manual-skip", action="store_true", help="option to skip frame manually.")
+ap.add_argument("--manual-yolo", action="store_true", help="option to check yolo detection result.")
 args = vars(ap.parse_args())
 
-# Tracker related variable.
+# Tracker related variables.
 tracker_class = str(args['tracker']).upper()
 trackers = []
+
+# OpenCV related variables.
+window_name_detected_object = "detected objects by YOLO"
+window_name_tracking_object = "detect and track"
+is_manual_skip = args['manual_skip']
+is_manual_yolo = args['manual_yolo']
 
 # Video input, output variables.
 video_input = cv2.VideoCapture(0) if args['video'] is None else cv2.VideoCapture(args['video'])
@@ -112,9 +120,10 @@ while True:
             text = "{}: {:.4f}".format(coco_labels[int(class_ids[i])], confidences[i])
             cv2.putText(detected_objects_window, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
-    cv2.imshow("detected objects by YOLO", detected_objects_window)
+    cv2.imshow(window_name_detected_object, detected_objects_window)
     if utils.wait_key("q"):
         print("Detection result accepted.")
+        cv2.destroyWindow(window_name_detected_object)
         break
     else:
         print("Detection result refused.")
@@ -134,61 +143,32 @@ while video_input.isOpened():
     current_tracking_object_size = 0
     timer = cv2.getTickCount()
     is_video_playing, video_frame = video_input.read()
+    yolo_results = []
     if is_video_playing is False:
         print("END OF VIDEO STREAM.")
         break
-
-    # update tracker's tracking result
-    for tracker_status in trackers:
-        tracker_status.update_tracker(video_frame)
 
     if current_frame % 15 == 0:
         current_frame = 0
         # detect object by YOLO every nth frame.
         bounding_boxes, confidences, class_ids, indexes = yolo(video_frame, net, layer_name, yolo_confidence, yolo_nms_threshold)
 
-        # delete failed trackers
-        for tracker_status in trackers:
-            # if tracking result is false
-            if tracker_status.is_tracker_tracking() is False:
-                trackers.remove(tracker_status)
-                continue
-
-            # if centroid is out of view
-            (cx, cy) = tracker_status.get_centroid()
-            if not 0 < cx < video_width or not 0 < cy < video_height:
-                trackers.remove(tracker_status)
-                continue
-
-            # if tracking result jumps too much distance
-            if tracker_status.is_tracker_jumping():
-                trackers.remove(tracker_status)
-                continue
-
-            # if tracking result is too small
-            (x, y, w, h) = tracker_status.get_bounding_box()
-            if w < 50 or h < 50:
-                trackers.remove(tracker_status)
-                continue
-
         # try to find out this detected object is already tracked or not by comparing centroids.
         # TODO: find appropriate threshold for distance between centroids. or another algorithm.
         if len(indexes) > 0:
             for i in indexes.flatten():
+                # draw yolo result to another image.
+                x, y, w, h = [v for v in map(lambda j: int(j), bounding_boxes[i])]
+                yolo_results.append((x, y, w, h))
+
                 is_this_object_new = True
                 # Get tracking object's centroid to compare with existing ones.
                 compared_centroid = utils.get_centroid(bounding_boxes[i])
                 for tracker_status in trackers:
                     existing_centroid = tracker_status.get_centroid()
                     distance_between_centroids = math.dist(compared_centroid, existing_centroid)
-                    if distance_between_centroids > 30:
-                        # Then this object has never been tracked by current tracker.
-                        pass
-                    else:
+                    if distance_between_centroids < 30:
                         # Then this object is already tracked by current tracker.
-                        # TODO: this cause bug when yolo detects some static object and occlusion occurs.
-                        # tracker should be disappeared for failure of detecting target but keep alives
-                        # because its centroid distance between yolo is lower than 30.
                         is_this_object_new = False
                         break
 
@@ -198,6 +178,34 @@ while video_input.isOpened():
                     tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
                     tracker_status.set_target_category(coco_labels[int(class_ids[i])])
                     trackers.append(tracker_status)
+
+    # update tracker's tracking result
+    for tracker_status in trackers:
+        tracker_status.update_tracker(video_frame)
+
+    # delete failed trackers
+    for tracker_status in trackers:
+        # if tracking result is false
+        if tracker_status.is_tracker_tracking() is False:
+            trackers.remove(tracker_status)
+            continue
+
+        # if centroid is out of view
+        (cx, cy) = tracker_status.get_centroid()
+        if not 0 < cx < video_width or not 0 < cy < video_height:
+            trackers.remove(tracker_status)
+            continue
+
+        # if tracking result jumps too much distance
+        if tracker_status.is_tracker_jumping():
+            trackers.remove(tracker_status)
+            continue
+
+        # if tracking result is too small
+        (x, y, w, h) = tracker_status.get_bounding_box()
+        if w < 50 or h < 50:
+            trackers.remove(tracker_status)
+            continue
 
     # draw at once so tracker's bounding boxes won't interfere with other tracker's tracking.
     for tracker_status in trackers:
@@ -213,26 +221,44 @@ while video_input.isOpened():
             detection_status_string = "{} #{}".format(tracker_status.get_target_category(), tracker_status.get_index())
             cv2.putText(video_frame, detection_status_string, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
+    # if yolo_results exist and option is set, draw how yolo detected objects.
+    if len(yolo_results) > 0 and is_manual_yolo:
+        for x, y, w, h in yolo_results:
+            cv2.rectangle(video_frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            cv2.circle(video_frame, (int(x+w/2), int(y+h/2)), 2, (255, 0, 0), 2)
+            cv2.putText(video_frame, "DETECTED BY YOLO", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
     # draw tracking status string.
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
     current_fps_string = "Current fps: {}".format(int(fps))
     tracking_status_string = "Tracking: {} objects".format(current_tracking_object_size)
     tracker_status_string = "Tracker: {}".format(tracker_class)
+    yolo_threshold_string = "{}".format(current_frame * "#").ljust(15, "-")
 
-    cv2.rectangle(video_frame, (5, 25), (220, 100), (0, 0, 0), -1)
+    cv2.rectangle(video_frame, (5, 25), (220, 120), (0, 0, 0), -1)
     cv2.putText(video_frame, current_fps_string, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
     cv2.putText(video_frame, tracking_status_string, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
     cv2.putText(video_frame, tracker_status_string, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
+    cv2.putText(video_frame, yolo_threshold_string, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
 
-    cv2.imshow("detect and track", video_frame)
+    cv2.imshow(window_name_tracking_object, video_frame)
     if is_video_write:
         video_writer.write(video_frame)
 
-    key = cv2.waitKey(30) & 0xFF
-    if key == ord("q"):
-        break
-    elif key == ord("s"):
-        utils.wait_key("s")
+    # if yolo_results exist and option is set, wait for user input.
+    if len(yolo_results) > 0 and is_manual_yolo:
+        utils.wait_key("q")
+
+    # if option is set, wait for user input.
+    if is_manual_skip:
+        if utils.wait_key("q"):
+            break
+    else:
+        key = cv2.waitKey(30) & 0xFF
+        if key == 27:  # ESC input.
+            break
+        if key == ord("s"):  # 's' to pause.
+            utils.wait_key("s")
 
 video_input.release()
 cv2.destroyAllWindows()
