@@ -1,5 +1,16 @@
 import cv2
 
+COLOR_WHITE = (255, 255, 255)
+COLOR_BLACK = (0, 0, 0)
+COLOR_RED = (0, 0, 255)
+COLOR_GREEN = (0, 255, 0)
+COLOR_BLUE = (255, 0, 0)
+COLOR_YELLOW = (0, 255, 255)
+COLOR_MAGENTA = (255, 0, 255)
+COLOR_CYAN = (255, 255, 0)
+COLOR_ORANGE = (0, 165, 255)
+COLOR_GRAY = (128, 128, 128)
+
 
 def wait_key(expected_key: str = "q"):
     while True:

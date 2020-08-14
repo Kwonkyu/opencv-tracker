@@ -119,9 +119,9 @@ while True:
         for i in indexes.flatten():
             # A pandas.Index.flatten() function returns a copy of the array into one dimension.
             (x, y, w, h) = bounding_boxes[i]
-            cv2.rectangle(detected_objects_window, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.rectangle(detected_objects_window, (x, y), (x + w, y + h), utils.COLOR_GREEN, 2)
             text = "{}: {:.4f}".format(coco_labels[int(class_ids[i])], confidences[i])
-            cv2.putText(detected_objects_window, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            cv2.putText(detected_objects_window, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_WHITE, 2)
 
     cv2.imshow(window_name_detected_object, detected_objects_window)
     if utils.wait_key("q"):
@@ -145,7 +145,7 @@ while video_input.isOpened():
     current_frame = current_frame + 1
     current_tracking_object_size = 0
     timer = cv2.getTickCount()
-    yolo_results = []
+    yolo_results = dict()
     is_video_playing, video_frame = video_input.read()
     if is_video_playing is False:
         print("END OF VIDEO STREAM.")
@@ -161,7 +161,9 @@ while video_input.isOpened():
             for i in indexes.flatten():
                 # store yolo results to draw on another image.
                 x, y, w, h = [v for v in map(lambda j: int(j), bounding_boxes[i])]
-                yolo_results.append((x, y, w, h))
+                yolo_results.update({(x, y, w, h): {'confidence': int(confidences[i] * 100),
+                                                    'category': coco_labels[int(class_ids[i])],
+                                                    'signature': i}})
 
                 is_this_object_new = True
                 # get tracking object's centroid to compare with existing ones.
@@ -224,8 +226,9 @@ while video_input.isOpened():
 
         # if tracking result is too small
         (x, y, w, h) = tracker_status.get_bounding_box()
-        if w < 50 or h < 50:
-            trackers.remove(tracker_status)
+        # if w < 30 or h < 30:
+        if w * h < 1500:
+            failed_trackers.append(tracker_status)
             continue
 
         # if IoU rate with other tracker is over 50%
@@ -245,33 +248,37 @@ while video_input.isOpened():
             current_tracking_object_size = current_tracking_object_size + 1
             # draw bounding box.
             (x, y, w, h) = tracker_status.get_bounding_box()
-            cv2.rectangle(video_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.rectangle(video_frame, (x, y), (x+w, y+h), utils.COLOR_GREEN, 2)
             # draw centroid point.
             (cx, cy) = tracker_status.get_centroid()
-            cv2.circle(video_frame, (cx, cy), 2, (0, 255, 0), 2)
+            cv2.circle(video_frame, (cx, cy), 2, utils.COLOR_GREEN, 2)
             # draw object category, index number text.
             detection_status_string = "{} #{}".format(tracker_status.get_target_category(), tracker_status.get_index())
-            cv2.putText(video_frame, detection_status_string, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            cv2.putText(video_frame, detection_status_string, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_GREEN, 2)
 
     # if yolo_results exist and option is set, draw how yolo detected objects.
     if len(yolo_results) > 0 and is_manual_yolo:
-        for x, y, w, h in yolo_results:
-            cv2.rectangle(video_frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-            cv2.circle(video_frame, (int(x+w/2), int(y+h/2)), 2, (255, 0, 0), 2)
-            cv2.putText(video_frame, "DETECTED BY YOLO", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        for x, y, w, h in yolo_results.keys():
+            cv2.rectangle(video_frame, (x, y), (x + w, y + h), utils.COLOR_BLUE, 2)
+            cv2.circle(video_frame, (int(x+w/2), int(y+h/2)), 2, utils.COLOR_BLUE, 2)
+            yolo_result_text = "{} at {}%".format(yolo_results[(x, y, w, h)]['category'],
+                                                  yolo_results[(x, y, w, h)]['confidence'])
+            cv2.putText(video_frame, "DETECTED BY YOLO", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_CYAN, 2)
+            cv2.putText(video_frame, yolo_result_text, (x, y + h + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_CYAN, 2)
 
-    # draw tracking status string.
+    # tracking status information text.
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
     current_fps_string = "Current fps: {}".format(int(fps))
     tracking_status_string = "Tracking: {} objects".format(current_tracking_object_size)
     tracker_status_string = "Tracker: {}".format(tracker_class)
     yolo_threshold_string = "{}".format(current_frame * "#").ljust(yolo_frame_threshold, "-")
 
-    cv2.rectangle(video_frame, (5, 25), (170 + 5 * yolo_frame_threshold, 120), (0, 0, 0), -1)
-    cv2.putText(video_frame, current_fps_string, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
-    cv2.putText(video_frame, tracking_status_string, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
-    cv2.putText(video_frame, tracker_status_string, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
-    cv2.putText(video_frame, yolo_threshold_string, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
+    # draw tracking status information.
+    cv2.rectangle(video_frame, (5, 25), (170 + 5 * yolo_frame_threshold, 120), utils.COLOR_BLACK, -1)
+    cv2.putText(video_frame, current_fps_string, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_WHITE)
+    cv2.putText(video_frame, tracking_status_string, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_WHITE)
+    cv2.putText(video_frame, tracker_status_string, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_WHITE)
+    cv2.putText(video_frame, yolo_threshold_string, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_WHITE)
 
     cv2.imshow(window_name_tracking_object, video_frame)
     if is_video_write:
