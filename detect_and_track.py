@@ -224,6 +224,17 @@ while video_input.isOpened():
             trackers.remove(tracker_status)
             continue
 
+        # if IoU rate with other tracker is over 50%
+        bboxCurrentTracker = bbox.BBox2D((x, y, w, h))
+        for other_tracker in trackers:
+            if id(other_tracker) == id(tracker_status):
+                continue
+            bboxOtherTracker = bbox.BBox2D((other_tracker.get_bounding_box()))
+            iou_rate = bbox.metrics.iou_2d(bboxCurrentTracker, bboxOtherTracker) * 100
+            if iou_rate > 50:
+                trackers.remove(tracker_status)  # remove other_tracker, or tracker_status.
+                break
+
     # draw at once so tracker's bounding boxes won't interfere with other tracker's tracking.
     for tracker_status in trackers:
         if tracker_status.is_tracker_tracking():
