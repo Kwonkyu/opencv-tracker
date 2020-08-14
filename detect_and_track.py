@@ -3,24 +3,25 @@
 # 0.1v: detect object at first frame and set tracker on it.
 # 0.2v: use centroid to tell detected object is already tracked or not.
 
-import numpy as np
 import argparse
-import cv2
-import os
 import datetime
 import json
 import math
+import os
+
+import bbox.metrics
+import cv2
+import numpy as np
 
 import utils
 from TrackerStatus import TrackerStatus
-
 
 # Arguments to specify options.
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", help="path to input image")
 ap.add_argument("-y", "--yolo-json", required=True, help="json file about YOLO setting")
 ap.add_argument("-t", "--tracker", required=True, help="tracker to track detected objects.")
-ap.add_argument("-o", "--output", action='store_true', help="option to write output to video file.")
+ap.add_argument("--output", action='store_true', help="option to write output to video file.")
 ap.add_argument("--manual-skip", action="store_true", help="option to skip frame manually.")
 ap.add_argument("--manual-yolo", action="store_true", help="option to check yolo detection result.")
 args = vars(ap.parse_args())
@@ -142,8 +143,8 @@ while video_input.isOpened():
     current_frame = current_frame + 1
     current_tracking_object_size = 0
     timer = cv2.getTickCount()
-    is_video_playing, video_frame = video_input.read()
     yolo_results = []
+    is_video_playing, video_frame = video_input.read()
     if is_video_playing is False:
         print("END OF VIDEO STREAM.")
         break
@@ -154,19 +155,36 @@ while video_input.isOpened():
         bounding_boxes, confidences, class_ids, indexes = yolo(video_frame, net, layer_name, yolo_confidence, yolo_nms_threshold)
 
         # try to find out this detected object is already tracked or not by comparing centroids.
-        # TODO: find appropriate threshold for distance between centroids. or another algorithm.
         if len(indexes) > 0:
             for i in indexes.flatten():
-                # draw yolo result to another image.
+                # store yolo results to draw on another image.
                 x, y, w, h = [v for v in map(lambda j: int(j), bounding_boxes[i])]
                 yolo_results.append((x, y, w, h))
 
                 is_this_object_new = True
-                # Get tracking object's centroid to compare with existing ones.
+                # get tracking object's centroid to compare with existing ones.
                 compared_centroid = utils.get_centroid(bounding_boxes[i])
+                # then compare with other trackers to find out if this detected-by-yolo object
+                # is already tracked by other tracker.
+
+                # try calculating intersection-over-union with bounding boxes
+                bboxYOLO = bbox.BBox2D((x, y, w, h))
+
                 for tracker_status in trackers:
+                    # clipping bounding box inside of image(window).
+                    clipped_bounding_box = utils.clip_bounding_box(tracker_status.get_bounding_box(), video_width, video_height)
+                    bboxTracker = bbox.BBox2D(clipped_bounding_box)
+
+                    iou_rate = bbox.metrics.iou_2d(bboxYOLO, bboxTracker) * 100
+                    # if intersection-over-union rate is too high
+                    if iou_rate > 50:
+                        # then this object is already tracked by current tracker.
+                        is_this_object_new = False
+                        break
+
                     existing_centroid = tracker_status.get_centroid()
                     distance_between_centroids = math.dist(compared_centroid, existing_centroid)
+                    # if centroid of tracker and yolo's bounding boxes are too close.
                     if distance_between_centroids < 30:
                         # Then this object is already tracked by current tracker.
                         is_this_object_new = False
@@ -183,7 +201,7 @@ while video_input.isOpened():
     for tracker_status in trackers:
         tracker_status.update_tracker(video_frame)
 
-    # delete failed trackers
+    # delete failed trackers every frame
     for tracker_status in trackers:
         # if tracking result is false
         if tracker_status.is_tracker_tracking() is False:
@@ -206,6 +224,17 @@ while video_input.isOpened():
         if w < 50 or h < 50:
             trackers.remove(tracker_status)
             continue
+
+        # if IoU rate with other tracker is over 50%
+        bboxCurrentTracker = bbox.BBox2D((x, y, w, h))
+        for other_tracker in trackers:
+            if id(other_tracker) == id(tracker_status):
+                continue
+            bboxOtherTracker = bbox.BBox2D((other_tracker.get_bounding_box()))
+            iou_rate = bbox.metrics.iou_2d(bboxCurrentTracker, bboxOtherTracker) * 100
+            if iou_rate > 50:
+                trackers.remove(tracker_status)  # remove other_tracker, or tracker_status.
+                break
 
     # draw at once so tracker's bounding boxes won't interfere with other tracker's tracking.
     for tracker_status in trackers:
