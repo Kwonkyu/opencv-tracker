@@ -3,19 +3,18 @@
 # 0.1v: detect object at first frame and set tracker on it.
 # 0.2v: use centroid to tell detected object is already tracked or not.
 
-import numpy as np
 import argparse
-import cv2
-import os
 import datetime
 import json
 import math
-import bbox.bbox2d
+import os
+
 import bbox.metrics
+import cv2
+import numpy as np
 
 import utils
 from TrackerStatus import TrackerStatus
-
 
 # Arguments to specify options.
 ap = argparse.ArgumentParser()
@@ -172,8 +171,10 @@ while video_input.isOpened():
                 bboxYOLO = bbox.BBox2D((x, y, w, h))
 
                 for tracker_status in trackers:
-                    (tx, ty, tw, th) = tracker_status.get_bounding_box()
-                    bboxTracker = bbox.BBox2D((tx, ty, tw, th))
+                    # clipping bounding box inside of image(window).
+                    clipped_bounding_box = utils.clip_bounding_box(tracker_status.get_bounding_box(), video_width, video_height)
+                    bboxTracker = bbox.BBox2D(clipped_bounding_box)
+
                     iou_rate = bbox.metrics.iou_2d(bboxYOLO, bboxTracker) * 100
                     # if intersection-over-union rate is too high
                     if iou_rate > 50:

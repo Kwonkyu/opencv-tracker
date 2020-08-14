@@ -28,3 +28,20 @@ def get_centroid(bounding_box) -> tuple:
     centroid = (_x + _w / 2, _y + _h / 2)
     return centroid
 
+
+def clip_bounding_box(bounding_box, frame_width, frame_height):
+    x, y, w, h = bounding_box
+    # if coordinate x is out of bound(left)
+    if x < 0:
+        x = 0
+    # if coordinate x is out of bound(right)
+    elif frame_width < x + w:
+        x = x - (w - (frame_width - x))
+    # if coordinate y is out of bound(top)
+    if y < 0:
+        y = 0
+    # if coordinate y is out of bound(bottom)
+    elif frame_height < y + h:
+        y = y - (h - (frame_height - y))
+
+    return x, y, w, h
