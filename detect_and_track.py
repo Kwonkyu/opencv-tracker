@@ -22,6 +22,7 @@ ap.add_argument("-v", "--video", help="path to input image")
 ap.add_argument("-y", "--yolo-json", required=True, help="json file about YOLO setting")
 ap.add_argument("-t", "--tracker", required=True, help="tracker to track detected objects.")
 ap.add_argument("--output", action='store_true', help="option to write output to video file.")
+ap.add_argument("--yolo-threshold", type=int, default=15, help="option to set frame period when yolo re-detects object")
 ap.add_argument("--manual-skip", action="store_true", help="option to skip frame manually.")
 ap.add_argument("--manual-yolo", action="store_true", help="option to check yolo detection result.")
 args = vars(ap.parse_args())
@@ -50,6 +51,7 @@ with open(args['yolo_json']) as json_file:
     yolo_env = json.load(json_file)
 
 # YOLO variables.
+yolo_frame_threshold = args['yolo_threshold']
 coco_label_path = os.path.sep.join([yolo_env["yolo-directory"], yolo_env["coco-names"]])
 yolo_weight_path = os.path.sep.join([yolo_env["yolo-directory"], yolo_env["yolo-weights"]])
 yolo_config_path = os.path.sep.join([yolo_env["yolo-directory"], yolo_env["yolo-cfg"]])
@@ -149,7 +151,7 @@ while video_input.isOpened():
         print("END OF VIDEO STREAM.")
         break
 
-    if current_frame % 15 == 0:
+    if current_frame % yolo_frame_threshold == 0:
         current_frame = 0
         # detect object by YOLO every nth frame.
         bounding_boxes, confidences, class_ids, indexes = yolo(video_frame, net, layer_name, yolo_confidence, yolo_nms_threshold)
@@ -201,6 +203,7 @@ while video_input.isOpened():
     for tracker_status in trackers:
         tracker_status.update_tracker(video_frame)
 
+    # TODO: removing item in loop of list, it could cause indexing problem.
     # delete failed trackers every frame
     for tracker_status in trackers:
         # if tracking result is false
@@ -262,9 +265,9 @@ while video_input.isOpened():
     current_fps_string = "Current fps: {}".format(int(fps))
     tracking_status_string = "Tracking: {} objects".format(current_tracking_object_size)
     tracker_status_string = "Tracker: {}".format(tracker_class)
-    yolo_threshold_string = "{}".format(current_frame * "#").ljust(15, "-")
+    yolo_threshold_string = "{}".format(current_frame * "#").ljust(yolo_frame_threshold, "-")
 
-    cv2.rectangle(video_frame, (5, 25), (220, 120), (0, 0, 0), -1)
+    cv2.rectangle(video_frame, (5, 25), (170 + 5 * yolo_frame_threshold, 120), (0, 0, 0), -1)
     cv2.putText(video_frame, current_fps_string, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
     cv2.putText(video_frame, tracking_status_string, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
     cv2.putText(video_frame, tracker_status_string, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255))
