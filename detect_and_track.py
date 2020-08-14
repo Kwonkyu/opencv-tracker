@@ -193,6 +193,7 @@ while video_input.isOpened():
                         break
 
                 if is_this_object_new:
+                    # yolo_results.append((x, y, w, h)) <-- if this expression is here, only shows new target.
                     tracker = utils.get_tracker(tracker_class)
                     tracker_status = TrackerStatus(tracker)
                     tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
@@ -203,29 +204,30 @@ while video_input.isOpened():
     for tracker_status in trackers:
         tracker_status.update_tracker(video_frame)
 
-    # TODO: removing item in loop of list, it could cause indexing problem.
+    failed_trackers = []
     # delete failed trackers every frame
     for tracker_status in trackers:
         # if tracking result is false
         if tracker_status.is_tracker_tracking() is False:
-            trackers.remove(tracker_status)
+            failed_trackers.append(tracker_status)
             continue
 
         # if centroid is out of view
         (cx, cy) = tracker_status.get_centroid()
         if not 0 < cx < video_width or not 0 < cy < video_height:
-            trackers.remove(tracker_status)
+            failed_trackers.append(tracker_status)
             continue
 
         # if tracking result jumps too much distance
         if tracker_status.is_tracker_jumping():
-            trackers.remove(tracker_status)
+            failed_trackers.append(tracker_status)
             continue
 
         # if tracking result is too small
         (x, y, w, h) = tracker_status.get_bounding_box()
-        if w < 50 or h < 50:
-            trackers.remove(tracker_status)
+        # TODO: if limit is too small, some normal tracking may fail. need proper threshold.
+        if w < 30 or h < 30:
+            failed_trackers.append(tracker_status)
             continue
 
         # if IoU rate with other tracker is over 50%
@@ -236,8 +238,12 @@ while video_input.isOpened():
             bboxOtherTracker = bbox.BBox2D((other_tracker.get_bounding_box()))
             iou_rate = bbox.metrics.iou_2d(bboxCurrentTracker, bboxOtherTracker) * 100
             if iou_rate > 50:
-                trackers.remove(tracker_status)  # remove other_tracker, or tracker_status.
+                failed_trackers.append(tracker_status)
                 break
+
+    # removed failed trackers.
+    for failed_tracker in failed_trackers:
+        trackers.remove(failed_tracker)
 
     # draw at once so tracker's bounding boxes won't interfere with other tracker's tracking.
     for tracker_status in trackers:
