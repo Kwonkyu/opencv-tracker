@@ -31,6 +31,7 @@ args = vars(ap.parse_args())
 tracker_class = str(args['tracker']).upper()
 trackers = []
 tracker_paths = dict()
+tracker_paths_residue = dict()
 
 # OpenCV related variables.
 window_name_detected_object = "detected objects by YOLO"
@@ -248,7 +249,8 @@ while video_input.isOpened():
 
     # removed failed tracker and it's path.
     for failed_tracker in failed_trackers:
-        tracker_paths.pop(failed_tracker)
+        # TODO: don't remove whole path when tracker is removed, but gradually.
+        tracker_paths_residue.update({failed_tracker: tracker_paths.pop(failed_tracker)})
         trackers.remove(failed_tracker)
 
     # draw at once so tracker's bounding boxes won't interfere with other tracker's tracking.
@@ -267,13 +269,30 @@ while video_input.isOpened():
             # if path length hits threshold, remove most outdated path and insert latest one.
             if len(tracker_path) > 50:
                 tracker_path.pop(0)
-                # TODO: something to do is... not removing whole path when tracker is removed, but gradually.
             tracker_path.append(tracker_status.get_path())
             for path in tracker_path:
                 cv2.line(video_frame, tuple(path[0]), tuple(path[1]), path_color, 2, cv2.LINE_AA)
             # draw object category, index number text.
             detection_status_string = "{} #{}".format(tracker_status.get_target_category(), tracker_status.get_index())
             cv2.putText(video_frame, detection_status_string, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_GREEN, 2)
+
+    # draw residue tracking paths until it's all gone.
+    empty_trackers = []
+    for failed_tracker, residue in tracker_paths_residue.items():
+        path_color = residue['color']
+        tracker_path = residue['path']
+        # if there're no remaining paths, remove tracker from list.
+        if len(tracker_path) == 0:
+            empty_trackers.append(failed_tracker)
+            continue
+        # if there're still paths left to draw, draw with tracker color.
+        for path in tracker_path:
+            cv2.line(video_frame, tuple(path[0]), tuple(path[1]), path_color, 2, cv2.LINE_8)
+        tracker_path.pop(0)
+
+    # dictionary can't be changed during items() iteration.
+    for tracker in empty_trackers:
+        tracker_paths_residue.pop(tracker)
 
     # if yolo_results exist and option is set, draw how yolo detected objects.
     if len(yolo_results) > 0 and is_manual_yolo:
