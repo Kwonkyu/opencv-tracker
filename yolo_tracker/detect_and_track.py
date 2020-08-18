@@ -13,8 +13,8 @@ import bbox.metrics
 import cv2
 import numpy as np
 
-import utils
-from TrackerStatus import TrackerStatus
+from yolo_tracker import utils
+from yolo_tracker.TrackerStatus import TrackerStatus
 
 # Arguments to specify options.
 ap = argparse.ArgumentParser()

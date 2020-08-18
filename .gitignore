@@ -132,13 +132,13 @@ dmypy.json
 .idea/
 
 # Project Output
-benchmark/
+benchmark_tracker/benchmark/
 model/
 video/
 *.avi
 *.mp4
 
 # Project Models
-goturn.caffemodel
-goturn.prototxt
+model/goturn/goturn.caffemodel
+model/goturn/goturn.prototxt
 sort-module/

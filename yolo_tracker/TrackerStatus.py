@@ -1,4 +1,4 @@
-from utils import get_centroid
+from yolo_tracker.utils import get_centroid
 import math
 
 

@@ -7,10 +7,9 @@ import datetime
 # - Argument parsing related variables.
 argparser = argparse.ArgumentParser()
 argparser.add_argument("-v", "--video", type=str, help="video file input")
-argparser.add_argument("-t", "--tracker", type=str, nargs='*',
-                       help="tracker type input(BOOSTING CSRT GOTURN KCF MEDIANFLOW MOSSE TLD).",
-                       required=True)
-argparser.add_argument("-n", "--nocapture", action='store_false',
+argparser.add_argument("-t", "--tracker", type=str, nargs='*', required=True,
+                       help="tracker type input(BOOSTING CSRT GOTURN KCF MEDIANFLOW MOSSE TLD MIL).")
+argparser.add_argument("--nocapture", action='store_false',
                        help="option to not write video file. default is write video file.")
 args = vars(argparser.parse_args())
 selected_tracker_name = args['tracker']
