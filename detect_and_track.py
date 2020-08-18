@@ -30,6 +30,7 @@ args = vars(ap.parse_args())
 # Tracker related variables.
 tracker_class = str(args['tracker']).upper()
 trackers = []
+tracker_paths = dict()
 
 # OpenCV related variables.
 window_name_detected_object = "detected objects by YOLO"
@@ -139,6 +140,7 @@ for i in indexes.flatten():
     tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
     tracker_status.set_target_category(coco_labels[int(class_ids[i])])
     trackers.append(tracker_status)
+    tracker_paths.update({tracker_status: {'color': utils.get_random_color(), 'path': []}})
 
 current_frame = 0
 while video_input.isOpened():
@@ -201,6 +203,7 @@ while video_input.isOpened():
                     tracker_status.init_tracker(video_frame, tuple(bounding_boxes[i]))
                     tracker_status.set_target_category(coco_labels[int(class_ids[i])])
                     trackers.append(tracker_status)
+                    tracker_paths.update({tracker_status: {'color': utils.get_random_color(), 'path': []}})
 
     # update tracker's tracking result
     for tracker_status in trackers:
@@ -210,7 +213,7 @@ while video_input.isOpened():
     # delete failed trackers every frame
     for tracker_status in trackers:
         # if tracking result is false
-        if tracker_status.is_tracker_tracking() is False:
+        if tracker_status.is_tracker_tracking() is False and tracker_status.is_tracker_threshold_limit():
             failed_trackers.append(tracker_status)
             continue
 
@@ -243,8 +246,9 @@ while video_input.isOpened():
                 failed_trackers.append(tracker_status)
                 break
 
-    # removed failed trackers.
+    # removed failed tracker and it's path.
     for failed_tracker in failed_trackers:
+        tracker_paths.pop(failed_tracker)
         trackers.remove(failed_tracker)
 
     # draw at once so tracker's bounding boxes won't interfere with other tracker's tracking.
@@ -257,6 +261,16 @@ while video_input.isOpened():
             # draw centroid point.
             (cx, cy) = tracker_status.get_centroid()
             cv2.circle(video_frame, (cx, cy), 2, utils.COLOR_GREEN, 2)
+            # append and draw tracking paths
+            path_color = tracker_paths[tracker_status]['color']
+            tracker_path = tracker_paths[tracker_status]['path']
+            # if path length hits threshold, remove most outdated path and insert latest one.
+            if len(tracker_path) > 50:
+                tracker_path.pop(0)
+                # TODO: something to do is... not removing whole path when tracker is removed, but gradually.
+            tracker_path.append(tracker_status.get_path())
+            for path in tracker_path:
+                cv2.line(video_frame, tuple(path[0]), tuple(path[1]), path_color, 2, cv2.LINE_AA)
             # draw object category, index number text.
             detection_status_string = "{} #{}".format(tracker_status.get_target_category(), tracker_status.get_index())
             cv2.putText(video_frame, detection_status_string, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, utils.COLOR_GREEN, 2)
