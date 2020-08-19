@@ -1,16 +1,16 @@
 import cv2
 import datetime
 import argparse
-import os, os.path
+import os.path
 from PIL import Image
 
 
-argparser = argparse.ArgumentParser()
-argparser.add_argument("-i", "--images", type=str, required=True, help="image files input")
-argparser.add_argument("-g", "--ground-truth", type=str, required=True, help="ground truth file")
-argparser.add_argument("-n", "--no-bounding-box", action='store_false',
-                       help="option to not write video file. default is write video file.")
-args = vars(argparser.parse_args())
+ap = argparse.ArgumentParser()
+ap.add_argument("-i", "--images", type=str, required=True, help="image files input")
+ap.add_argument("-g", "--ground-truth", type=str, required=True, help="ground truth file")
+ap.add_argument("-n", "--no-bounding-box", action='store_false',
+                help="option to not write video file. default is write video file.")
+args = vars(ap.parse_args())
 
 image_directory = args['images']
 images = [image_directory+name for name in os.listdir(args['images'])]

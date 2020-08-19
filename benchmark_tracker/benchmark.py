@@ -14,16 +14,16 @@ trackers_list: dict = {"BOOSTING": cv2.TrackerBoosting_create(),
                        "MIL": cv2.TrackerMIL_create()}
 
 # Argument to specify options.
-argparser = argparse.ArgumentParser()
-argparser.add_argument("-v", "--video", type=str, required=True, help="benchmark video file input")
-argparser.add_argument("-g", "--ground-truth", type=str, required=True, help="ground truth file")
-argparser.add_argument("-t", "--tracker", type=str, required=True,  # nargs='*',
-                       help="benchmark tracker type input(BOOSTING CSRT GOTURN KCF MEDIANFLOW MOSSE TLD).")
-argparser.add_argument("--no-status", action='store_true', help="option to hide tracking status.")
-argparser.add_argument("--split", action='store_true', help="option to split ground truth and tracking output.")
-argparser.add_argument("--output", action="store_true", help="option to export result to video(avi).")
-argparser.add_argument("--benchmark-output", action="store_true", help="option to export benchmark result in txt.")
-args = vars(argparser.parse_args())
+ap = argparse.ArgumentParser()
+ap.add_argument("-v", "--video", type=str, required=True, help="benchmark video file input")
+ap.add_argument("-g", "--ground-truth", type=str, required=True, help="ground truth file")
+ap.add_argument("-t", "--tracker", type=str, required=True,  # nargs='*',
+                help="benchmark tracker type input(BOOSTING CSRT GOTURN KCF MEDIANFLOW MOSSE TLD).")
+ap.add_argument("--no-status", action='store_true', help="option to hide tracking status.")
+ap.add_argument("--split", action='store_true', help="option to split ground truth and tracking output.")
+ap.add_argument("--output", action="store_true", help="option to export result to video(avi).")
+ap.add_argument("--benchmark-output", action="store_true", help="option to export benchmark result in txt.")
+args = vars(ap.parse_args())
 
 # Video input, output related variables.
 video_input = cv2.VideoCapture(args['video'])
@@ -74,7 +74,7 @@ while video_input.isOpened():
         is_tracker_tracking, (x, y, w, h) = tracker.update(tracking_frame)
         (x, y, w, h) = (int(x), int(y), int(w), int(h))
         if is_tracker_tracking:
-            cv2.rectangle(tracking_frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
+            cv2.rectangle(tracking_frame, (x, y), (x+w, y+h), (0, 0, 255), 2)  # benchmark tracker is 'red' color.
 
     if benchmark_writer is not None:
         benchmark_writer.write("{},{},{},{}\n".format(x, y, w, h))
@@ -84,7 +84,7 @@ while video_input.isOpened():
     (x, y, w, h) = ground_truth_list[frame].split(',')
     (x1, y1, x2, y2) = (int(x), int(y), int(x) + int(w), int(y) + int(h))
     # Draw this ground-truth rectangle to video frame contrary to tracker output rectangle and tracking frame.
-    cv2.rectangle(video_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    cv2.rectangle(video_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)  # ground-truth tracker is 'green' color.
 
     # Build status strings to draw on frame.
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
