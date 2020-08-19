@@ -37,14 +37,30 @@ video_writer = cv2.VideoWriter(video_name, cv2.CAP_FFMPEG, cv2.VideoWriter_fourc
 
 # - Tracking related variables.
 def get_tracker(name):
-    trackers_list = {"BOOSTING": {"name": "BOOSTING", "instance": cv2.TrackerBoosting_create(), "color": (0, 0, 255)},
-                     "CSRT": {"name": "CSRT", "instance": cv2.TrackerCSRT_create(), "color": (66, 141, 245)},
-                     "GOTURN": {"name": "GOTURN", "instance": cv2.TrackerGOTURN_create(), "color": (66, 245, 240)},
-                     "KCF": {"name": "KCF", "instance": cv2.TrackerKCF_create(), "color": (111, 245, 66)},
-                     "MEDIANFLOW": {"name": "MEDIANFLOW", "instance": cv2.TrackerMedianFlow_create(), "color": (245, 147, 66)},
-                     "MOSSE": {"name": "MOSSE", "instance": cv2.TrackerMOSSE_create(), "color": (181, 43, 50)},
-                     "TLD": {"name": "TLD", "instance": cv2.TrackerTLD_create(), "color": (234, 5, 255)},
-                     "MIL": {"name": "MIL", "instance": cv2.TrackerMIL_create(), "color": (255, 255, 255)}}
+    trackers_list = {"BOOSTING": {"name": "BOOSTING",
+                                  "instance": cv2.TrackerBoosting_create(),
+                                  "color": (0, 0, 255)},
+                     "CSRT": {"name": "CSRT",
+                              "instance": cv2.TrackerCSRT_create(),
+                              "color": (66, 141, 245)},
+                     "GOTURN": {"name": "GOTURN",
+                                "instance": cv2.TrackerGOTURN_create(),
+                                "color": (66, 245, 240)},
+                     "KCF": {"name": "KCF",
+                             "instance": cv2.TrackerKCF_create(),
+                             "color": (111, 245, 66)},
+                     "MEDIANFLOW": {"name": "MEDIANFLOW",
+                                    "instance": cv2.TrackerMedianFlow_create(),
+                                    "color": (245, 147, 66)},
+                     "MOSSE": {"name": "MOSSE",
+                               "instance": cv2.TrackerMOSSE_create(),
+                               "color": (181, 43, 50)},
+                     "TLD": {"name": "TLD",
+                             "instance": cv2.TrackerTLD_create(),
+                             "color": (234, 5, 255)},
+                     "MIL": {"name": "MIL",
+                             "instance": cv2.TrackerMIL_create(),
+                             "color": (255, 255, 255)}}
     return trackers_list[name]
 
 
@@ -100,18 +116,24 @@ while video_input.isOpened():
     if len(trackers) != 0:
         for tracker_status in trackers:
             tracker_status.update_tracker(video_frame)
+            (cx, cy) = tracker_status.centroid
             # If tracking success, add tracker's bounding box and color to successful tracker container.
-            if tracker_status.is_tracker_tracking:
-                successful_tracker.append((tracker_status.bounding_box, tracker_status.unique_color))
+            # TODO: filtering tracking output!
+            # 1. if tracker is detected as failed, disable at once and never turn back.
+            # 2. even if tracker is detected as failed, wait for it to recover
+            if tracker_status.is_tracker_tracking and (not tracker_status.is_tracker_jumping) \
+                    and (0 < cx < video_width) and (0 < cy < video_height):
+                successful_tracker.append(tracker_status)
             # If tracking fails, add tracker's name to failed tracker container.
             else:
-                failed_tracker.append(tracker_status.instance_name)
+                failed_tracker.append(tracker_status)
 
-    # Draw successful tracking result's bounding boxes if exist
+    # Draw successful tracking result's bounding boxes and centroid if exist
     if len(successful_tracker) != 0:
-        for tracker in successful_tracker:
-            (x, y, w, h), color = tracker
-            cv2.rectangle(video_frame, (x, y), (x+w, y+h), color, 2)
+        for tracker_status in successful_tracker:
+            x, y, w, h = tracker_status.bounding_box
+            cv2.rectangle(video_frame, (x, y), (x + w, y + h), tracker_status.unique_color, 2)
+            cv2.circle(video_frame, tuple(tracker_status.centroid), 2, tracker_status.unique_color, 2)
 
     # Draw information text.
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
@@ -125,9 +147,11 @@ while video_input.isOpened():
 
     # Draw tracker status.
     tracker_status_loc_y = 110
-    cv2.rectangle(video_frame, (5, tracker_status_loc_y), (180, 120+20*len(selected_tracker_name)), (0, 0, 0), -1)
+    cv2.rectangle(video_frame, (5, tracker_status_loc_y), (180, 120 + 20 * len(selected_tracker_name)), (0, 0, 0), -1)
+    failed_tracker_names = [n for n in map(lambda t: t.instance_name, failed_tracker)]
     for tracker_name in selected_tracker_name:
-        tracker_status_string = "{}({})".format(tracker_name, "FAIL" if tracker_name in failed_tracker else "NORMAL")
+        tracker_status_string = "{}({})".format(tracker_name,
+                                                "FAIL" if tracker_name in failed_tracker_names else "NORMAL")
         tracker_status_string.center(15)
         tracker_status_loc_y = tracker_status_loc_y + 20
         cv2.putText(video_frame, tracker_status_string, (10, tracker_status_loc_y),
@@ -135,7 +159,6 @@ while video_input.isOpened():
     cv2.imshow(tracking_window_name, video_frame)
     if video_writer is not None:
         video_writer.write(video_frame)
-
 
 if video_writer is not None:
     video_writer.release()
