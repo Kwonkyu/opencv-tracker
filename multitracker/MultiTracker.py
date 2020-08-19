@@ -2,6 +2,7 @@ import cv2
 import argparse
 import datetime
 from enum import Enum
+from multitracker.TrackerStatus import TrackerStatus
 
 # Init variables.
 # - Argument parsing related variables.
@@ -30,9 +31,8 @@ video_input = cv2.VideoCapture(0) if args['video'] is None else cv2.VideoCapture
 video_width = int(video_input.get(cv2.CAP_PROP_FRAME_WIDTH))
 video_height = int(video_input.get(cv2.CAP_PROP_FRAME_HEIGHT))
 video_name = "output-{}-{}.avi".format(selected_tracker_name, datetime.datetime.now().strftime("%Y%m%d%H%M%S"))
-is_video_write = args['output']
 video_writer = cv2.VideoWriter(video_name, cv2.CAP_FFMPEG, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'),
-                               25, (video_width, video_height)) if is_video_write else None
+                               25, (video_width, video_height)) if args['output'] else None
 
 
 # - Tracking related variables.
@@ -75,17 +75,19 @@ while video_input.isOpened():
 
             # If multi-object, single-tracker mode('MULTI_OBJECT'), append ROI to object container and continue.
             if tracking_mode is TrackingMode.MULTI_OBJECT:
-                tracker = get_tracker(selected_tracker_name[0])
-                tracker['instance'].init(video_frame, tracking_region)
-                trackers.append(tracker)
+                tracker_set = get_tracker(selected_tracker_name[0])
+                tracker_status = TrackerStatus(tracker_set['instance'], tracker_set['name'], tracker_set['color'])
+                tracker_status.init_tracker(video_frame, tracking_region)
+                trackers.append(tracker_status)
                 continue
 
             # If single-object, multi-tracker mode('MULTI_TRACKER'), create and initialize trackers with selected ROI.
             if tracking_mode is TrackingMode.MULTI_TRACKER:
                 for tracker_name in selected_tracker_name:
-                    trackers.append(get_tracker(tracker_name))
-                for tracker in trackers:
-                    tracker['instance'].init(video_frame, tracking_region)
+                    tracker_set = get_tracker(tracker_name)
+                    tracker_status = TrackerStatus(tracker_set['instance'], tracker_set['name'], tracker_set['color'])
+                    tracker_status.init_tracker(video_frame, tracking_region)
+                    trackers.append(tracker_status)
                 break
     elif key == ord("c"):  # 'c' to clear trackers.
         trackers.clear()
@@ -96,22 +98,22 @@ while video_input.isOpened():
     successful_tracker = []
     failed_tracker = []
     if len(trackers) != 0:
-        for tracker in trackers:
-            is_tracker_tracking, updated_bounding_box = tracker['instance'].update(video_frame)
-            # Need to floor values because it's float.
-            floored_bounding_box = [v for v in map(lambda i: int(i), updated_bounding_box)]
-            if is_tracker_tracking:
-                successful_tracker.append((floored_bounding_box, tracker['color']))
+        for tracker_status in trackers:
+            tracker_status.update_tracker(video_frame)
+            # If tracking success, add tracker's bounding box and color to successful tracker container.
+            if tracker_status.is_tracker_tracking:
+                successful_tracker.append((tracker_status.bounding_box, tracker_status.unique_color))
+            # If tracking fails, add tracker's name to failed tracker container.
             else:
-                failed_tracker.append(tracker['name'])
+                failed_tracker.append(tracker_status.instance_name)
 
-    # Draw tracking result bounding boxes if exist
+    # Draw successful tracking result's bounding boxes if exist
     if len(successful_tracker) != 0:
         for tracker in successful_tracker:
             (x, y, w, h), color = tracker
             cv2.rectangle(video_frame, (x, y), (x+w, y+h), color, 2)
 
-    # Counter frames and draw text of it.
+    # Draw information text.
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
     current_frame_string = "Current frame: {}".format(int(fps))
     tracking_target_string = "Tracking Target: {}".format("SET" if len(trackers) != 0 else "NOT SET")
@@ -121,6 +123,7 @@ while video_input.isOpened():
     cv2.putText(video_frame, tracking_target_string, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255))
     cv2.putText(video_frame, tracking_status_string, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255))
 
+    # Draw tracker status.
     tracker_status_loc_y = 110
     cv2.rectangle(video_frame, (5, tracker_status_loc_y), (180, 120+20*len(selected_tracker_name)), (0, 0, 0), -1)
     for tracker_name in selected_tracker_name:
@@ -130,8 +133,11 @@ while video_input.isOpened():
         cv2.putText(video_frame, tracker_status_string, (10, tracker_status_loc_y),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, get_tracker(tracker_name)['color'])
     cv2.imshow(tracking_window_name, video_frame)
-    if is_video_write:
+    if video_writer is not None:
         video_writer.write(video_frame)
 
+
+if video_writer is not None:
+    video_writer.release()
 video_input.release()
 cv2.destroyAllWindows()
