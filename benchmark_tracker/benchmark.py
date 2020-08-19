@@ -108,7 +108,7 @@ while video_input.isOpened():
 
     # If video output option was set, draw ground-truth rectangle to tracking frame and write to video file.
     # It's because window is may split by option and so ground-truth rectangle, tracking output rectangle are
-    # drawed on separate window. x1, y1, x2, y2 variables which are coordinates of ground-truth rectangle
+    # drawed on separate window. x1, y1, x2, y2 variables which are 'coordinates of ground-truth rectangle'
     # keep their values to the end of this loop. So drawing ground-truth rectangle to tracking frame
     # won't be any problem. Remember, tracking frame is video frame when there's no split option was set.
     if video_writer is not None:
@@ -120,6 +120,9 @@ while video_input.isOpened():
     if key == ord("q"):
         break
 
-benchmark_writer.close()
+if video_writer is not None:
+    video_writer.release()
+if benchmark_writer is not None:
+    benchmark_writer.close()
 video_input.release()
 cv2.destroyAllWindows()
