@@ -1,4 +1,27 @@
 import cv2
+import random
+
+# It's BGR colors.
+COLOR_WHITE = (255, 255, 255)
+COLOR_BLACK = (0, 0, 0)
+COLOR_RED = (0, 0, 255)
+COLOR_GREEN = (0, 255, 0)
+COLOR_BLUE = (255, 0, 0)
+COLOR_YELLOW = (0, 255, 255)
+COLOR_MAGENTA = (255, 0, 255)
+COLOR_CYAN = (255, 255, 0)
+COLOR_ORANGE = (0, 165, 255)
+COLOR_GRAY = (128, 128, 128)
+
+
+def get_random_color(bgr=True):
+    B = random.randint(0, 255)
+    G = random.randint(0, 255)
+    R = random.randint(0, 255)
+    if bgr:
+        return B, G, R
+    else:
+        return R, G, B
 
 
 def wait_key(expected_key: str = "q"):
