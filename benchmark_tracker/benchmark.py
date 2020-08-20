@@ -181,6 +181,9 @@ plt.xlabel('frame sequence')
 plt.legend()
 plt.show()
 
+for tracker_name, iou_rate_list in iou_rates.items():
+    print("{}: {}%".format(tracker_name, statistics.mean(iou_rate_list)))
+
 if video_writer is not None:
     video_writer.release()
 if is_write_benchmark is not None:
