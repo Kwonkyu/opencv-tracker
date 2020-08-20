@@ -2,6 +2,10 @@ import cv2
 import argparse
 import datetime
 import os.path
+import statistics
+
+from bbox import bbox2d
+from bbox import metrics
 
 # Tracker creator dictionary.
 trackers_list: dict = {"BOOSTING": cv2.TrackerBoosting_create(),
@@ -50,6 +54,7 @@ tracker = None
 
 # Start from 0# frame of video.
 frame = 0
+iou_rates = []
 while video_input.isOpened():
     timer = cv2.getTickCount()
     is_video_playing, video_frame = video_input.read()
@@ -63,21 +68,21 @@ while video_input.isOpened():
         # If tracker is not initialized, create tracker based on given parameter and
         # get first coordinates from ground truth file to init as a selected ROI.
         tracker = trackers_list.get(str(args['tracker']).upper())
-        (x, y, w, h) = ground_truth_list[0].split(',')
-        (x, y, w, h) = (int(x), int(y), int(w), int(h))
-        tracker.init(tracking_frame, (x, y, w, h))
+        (tx, ty, tw, th) = ground_truth_list[0].split(',')
+        (tx, ty, tw, th) = (int(tx), int(ty), int(tw), int(th))
+        tracker.init(tracking_frame, (tx, ty, tw, th))
         # Draw a ground-truth-ROI on tracking frame, which is video frame if window is not separated.
-        cv2.rectangle(tracking_frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
+        cv2.rectangle(tracking_frame, (tx, ty), (tx+tw, ty+th), (0, 0, 255), 2)
     else:
         # If tracker is already initialized, update tracker and get result coordinates
         # to draw rectangle on tracking frame.
-        is_tracker_tracking, (x, y, w, h) = tracker.update(tracking_frame)
-        (x, y, w, h) = (int(x), int(y), int(w), int(h))
+        is_tracker_tracking, (tx, ty, tw, th) = tracker.update(tracking_frame)
+        (tx, ty, tw, th) = (int(tx), int(ty), int(tw), int(th))
         if is_tracker_tracking:
-            cv2.rectangle(tracking_frame, (x, y), (x+w, y+h), (0, 0, 255), 2)  # benchmark tracker is 'red' color.
+            cv2.rectangle(tracking_frame, (tx, ty), (tx+tw, ty+th), (0, 0, 255), 2)  # benchmark tracker is 'red' color.
 
     if benchmark_writer is not None:
-        benchmark_writer.write("{},{},{},{}\n".format(x, y, w, h))
+        benchmark_writer.write("{},{},{},{}\n".format(tx, ty, tw, th))
 
     # Draw a ground-truth rectangle based on given text file. It assume that text file has 4 numbers
     # on each line separated by comma(,). These numbers are x, y, width, height of rectangle.
@@ -86,20 +91,28 @@ while video_input.isOpened():
     # Draw this ground-truth rectangle to video frame contrary to tracker output rectangle and tracking frame.
     cv2.rectangle(video_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)  # ground-truth tracker is 'green' color.
 
+    # Calculate bounding boxes IoU rate between tracker result and ground-truth.
+    bboxTracker = bbox2d.BBox2D((tx, ty, tw, th))
+    bboxTruth = bbox2d.BBox2D((x, y, w, h))
+    iou_rate = int(metrics.iou_2d(bboxTracker, bboxTruth) * 100)  # % unit. floored.
+    iou_rates.append(iou_rate)
+
     # Build status strings to draw on frame.
     fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
     current_frame_string = "Current frame: {}".format(int(fps))
     tracking_target_string = "Tracker: {}".format(args['tracker'])
     tracking_status_string = "Tracking Status: {}".format("TRACKING" if is_tracker_tracking else "MISSING")
+    tracking_iou_string = "IoU Rate: {}%".format(iou_rate)
 
     # If hide option was set, don't draw status strings on frame. Useful when size of video is too small.
     if is_status_hide:
         print(current_frame_string, tracking_target_string, tracking_status_string, sep="_")
     else:
-        cv2.rectangle(tracking_frame, (5, 25), (220, 100), (0, 0, 0), -1)
+        cv2.rectangle(tracking_frame, (5, 25), (220, 120), (0, 0, 0), -1)
         cv2.putText(tracking_frame, current_frame_string, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255))
         cv2.putText(tracking_frame, tracking_target_string, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255))
         cv2.putText(tracking_frame, tracking_status_string, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255))
+        cv2.putText(tracking_frame, tracking_iou_string, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255))
 
     # If verbose option was set, draw benchmark result in window.
     cv2.imshow("benchmark", video_frame)
@@ -120,6 +133,7 @@ while video_input.isOpened():
     if key == ord("q"):
         break
 
+print("Average rate of IoU between tracker's result and ground-truth is {}%".format(int(statistics.mean(iou_rates))))
 if video_writer is not None:
     video_writer.release()
 if benchmark_writer is not None:
