@@ -2,7 +2,7 @@ import cv2
 import argparse
 import datetime
 from enum import Enum
-from multitracker.TrackerStatus import TrackerStatus
+from TrackerStatus import TrackerStatus
 
 # Init variables.
 # - Argument parsing related variables.
