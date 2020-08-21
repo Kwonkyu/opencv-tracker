@@ -133,12 +133,9 @@ dmypy.json
 
 # Project Output
 benchmark_tracker/benchmark/
-model/
 video/
 *.avi
 *.mp4
 
 # Project Models
-model/goturn/goturn.caffemodel
-model/goturn/goturn.prototxt
-sort-module/
+model/*
