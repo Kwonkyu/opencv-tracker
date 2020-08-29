@@ -9,7 +9,7 @@ There are 8 trackers in OpenCV.
 - TLD
 - MEDIANFLOW
 - KCF
-- GOTURN
+- GOTURN(To use this tracker, you need to download model files from [here](https://github.com/Mogball/goturn-files) and put in directory where script file exists)
 
 In these projects, we'll use these trackers in **python** with opencv-contrib-python.
 
